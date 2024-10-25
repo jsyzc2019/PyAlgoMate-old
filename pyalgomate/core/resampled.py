@@ -103,6 +103,12 @@ class ResampledBars():
     def getLastBars(self) -> bar.Bars:
         return self.__lastBars
 
+    def addLastBars(self, bars: bar.Bars):
+        if self.__lastBars:
+            self.__lastBars.merge(bars)
+        else:
+            self.__lastBars = bars
+
     def addBars(self, dateTime, value):
         if self.__range is None:
             self.__range = build_range(
