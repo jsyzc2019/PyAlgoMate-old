@@ -104,8 +104,10 @@ class ResampledBars():
         return self.__lastBars
 
     def addLastBars(self, bars: bar.Bars):
-        if self.__lastBars:
-            self.__lastBars.merge(bars)
+        if self.__lastBars and self.__lastBars.getDateTime() == bars.getDateTime():
+            self.__lastBars = bar.Bars(
+                {**self.__lastBars._Bars__barDict, **bars._Bars__barDict}
+            )
         else:
             self.__lastBars = bars
 
