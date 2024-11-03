@@ -110,6 +110,9 @@ class BaseBarFeed(feed.BaseFeed):
         """Returns the last :class:`pyalgotrade.bar.Bar` for a given instrument, or None."""
         return self.__lastBars.get(instrument, None)
 
+    def getMicroPrice(self, instrument):
+        return 0
+
     def getDefaultInstrument(self):
         """Returns the last instrument registered."""
         return self.__defaultInstrument
@@ -141,7 +144,7 @@ class BaseBarFeed(feed.BaseFeed):
 
     def getLastReceivedDateTime(self):
         return None
-    
+
     def getNextBarsDateTime(self):
         return None
 

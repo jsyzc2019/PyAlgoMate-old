@@ -137,6 +137,9 @@ class BaseStrategy(object):
             ret = bar.getPrice()
         return ret
 
+    def getMicroPrice(self, instrument):
+        return self.getFeed().getMicroPrice(instrument)
+
     def getFeed(self) -> BaseBarFeed:
         """Returns the :class:`pyalgotrade.barfeed.BaseBarFeed` that this strategy is using."""
         return self.__barFeed

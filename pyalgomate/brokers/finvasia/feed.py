@@ -10,6 +10,7 @@ import pickle
 import tempfile
 import threading
 import traceback
+import numpy as np
 from queue import Queue
 from typing import Optional, Tuple
 
@@ -79,8 +80,21 @@ class QuoteMessage(object):
         return float(self.__eventDict.get("lp", 0))
 
     @property
+    def microprice(self):
+        try:
+            bbp = float(self.__eventDict.get("bp1", 0))  # Buying Price 1
+            bap = float(self.__eventDict.get("sp1", 0))  # Sell Price 1
+            bbq = int(self.__eventDict.get("bq1", 0))  # Buying quantity 1
+            baq = int(self.__eventDict.get("sq1", 0))  # Sell Qty 1
+            mpp = ((bap * bbq) + (bbp * baq)) / (bbq + baq)
+            p = int(1 / 0.05)  # 0.05 is tick size
+            return float(np.ceil(mpp * p) / p)
+        except Exception:
+            return self.price
+
+    @property
     def volume(self):
-        return float(self.__eventDict.get("v", 0))
+        return float(self.__eventDict.get("volume", self.__eventDict.get("v", 0)))
 
     @property
     def openInterest(self):
@@ -201,6 +215,18 @@ class LiveTradeFeed(BaseBarFeed):
             ).getBar()
         return None
 
+    def getMicroPrice(self, instrument) -> float:
+        lastBarQuote = self.__latestQuotes.get(
+            self.__instrumentToTokenIdMapping[instrument], None
+        )
+        if lastBarQuote is not None:
+            return float(
+                QuoteMessage(
+                    lastBarQuote, self.__tokenIdToInstrumentMappings
+                ).microprice
+            )
+        return 0
+
     def __run_event_loop(self):
         asyncio.run(self.__async_main())
 
@@ -212,9 +238,16 @@ class LiveTradeFeed(BaseBarFeed):
                 key = message["e"] + "|" + message["tk"]
                 if float(message.get("lp", 0)) <= 0:
                     continue
-                self.__latestQuotes[key] = message
+                if key in self.__latestQuotes:
+                    symbolInfo = self.__latestQuotes[key]
+                    symbolInfo.update(message)
+                    self.__latestQuotes[key] = symbolInfo
+                else:
+                    self.__latestQuotes[key] = message
+
                 if message.get("oi", None) is not None:
                     self.__latestOIs[key] = float(message["oi"])
+
                 self.__queue.put_nowait(message)
                 self.__lastQuoteDateTime = message["ft"]
                 self.__lastReceivedDateTime = datetime.datetime.now()

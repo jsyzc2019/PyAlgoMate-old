@@ -6,6 +6,10 @@ import os
 import sys
 import tempfile
 
+import clickhouse_connect
+import clickhouse_connect.driver
+import clickhouse_connect.driver.client
+
 sys.path.append(
     os.path.join(
         os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
@@ -27,6 +31,36 @@ from NorenRestApiPy.NorenApi import NorenApi
 import pyalgomate.brokers.finvasia as finvasia
 
 logger = logging.getLogger(__name__)
+clickhouse_client = None
+
+
+def createClickhouseTable():
+    query = """
+    CREATE TABLE IF NOT EXISTS finvasia_market_data (
+        instrument String,
+        timestamp DateTime64(3),
+        ltp Float64,
+        volume Float64
+    ) ENGINE = MergeTree()
+    ORDER BY timestamp
+    """
+    clickhouse_client.command(query)
+
+
+def storeDataInClickhouse(data):
+    try:
+        if clickhouse_client is None:
+            return
+        query = "INSERT INTO finvasia_market_data (instrument, timestamp, ltp, volume) VALUES"
+        values = (
+            data["ts"],
+            data["ft"].strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],
+            float(data["lp"]),
+            float(data["volume"]),
+        )
+        clickhouse_client.command(f"{query} {values}")
+    except Exception as e:
+        logger.error(f"Error storing data in ClickHouse: {e}")
 
 
 class WebSocketClient:
@@ -132,13 +166,8 @@ class WebSocketClient:
         key = message["e"] + "|" + message["tk"]
         self.__lastReceivedDateTime = datetime.datetime.now()
         message["ct"] = self.__lastReceivedDateTime
-        self.__lastQuoteDateTime = (
-            datetime.datetime.fromtimestamp(int(message["ft"]))
-            if "ft" in message
-            else self.__lastReceivedDateTime.replace(microsecond=0)
-        )
-        message["ft"] = self.__lastQuoteDateTime
 
+        previousVolume = self.__quotes[key]["v"]
         if key in self.__quotes:
             symbolInfo = self.__quotes[key]
             symbolInfo.update(message)
@@ -146,7 +175,13 @@ class WebSocketClient:
         else:
             self.__quotes[key] = message
 
-        self.__socket.send_multipart([b"FEED_UPDATE", pickle.dumps(message)])
+        self.__lastQuoteDateTime = self.__quotes[key]["ft"]
+        if "v" in message:
+            self.__quotes[key]["volume"] = message["v"] - previousVolume
+            self.__socket.send_multipart(
+                [b"FEED_UPDATE", pickle.dumps(self.__quotes[key])]
+            )
+            storeDataInClickhouse(self.__quotes[key])
 
     def onOrderUpdate(self, message):
         logger.info(f"Order update: {message}")
@@ -205,6 +240,21 @@ if __name__ == "__main__":
 
     wsClient = WebSocketClient(api, tokenMappings)
     logger.info(f"IPC path: {wsClient.get_ipc_path()}")
+
+    if "Clickhouse" in creds:
+        clickhouse = creds["Clickhouse"]
+
+        clickhouse_client = clickhouse_connect.get_client(
+            host=clickhouse["host"],
+            port=clickhouse["port"],
+            username=clickhouse["user"],
+            password=clickhouse["password"],
+        )
+        logger.info(
+            f"Connected to ClickHouse. Server version: {clickhouse_client.server_version}"
+        )
+        createClickhouseTable()
+
     wsClient.startClient()
     if not wsClient.waitInitialized():
         exit(1)
