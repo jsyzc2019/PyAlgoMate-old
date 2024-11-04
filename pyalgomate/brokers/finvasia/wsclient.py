@@ -167,7 +167,7 @@ class WebSocketClient:
         self.__lastReceivedDateTime = datetime.datetime.now()
         message["ct"] = self.__lastReceivedDateTime
 
-        previousVolume = self.__quotes[key]["v"]
+        previousVolume = self.__quotes[key]["v"] if key in self.__quotes else 0
         if key in self.__quotes:
             symbolInfo = self.__quotes[key]
             symbolInfo.update(message)
@@ -175,7 +175,11 @@ class WebSocketClient:
         else:
             self.__quotes[key] = message
 
-        self.__lastQuoteDateTime = self.__quotes[key]["ft"]
+        self.__lastQuoteDateTime = (
+            self.__quotes[key]["ft"]
+            if "ft" in self.__quotes[key]
+            else self.__lastReceivedDateTime.replace(microsecond=0)
+        )
         if "v" in message:
             self.__quotes[key]["volume"] = message["v"] - previousVolume
             self.__socket.send_multipart(
