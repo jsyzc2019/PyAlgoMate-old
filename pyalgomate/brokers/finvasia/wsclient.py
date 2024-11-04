@@ -53,7 +53,7 @@ def storeDataInClickhouse(data):
             return
         query = "INSERT INTO finvasia_market_data (instrument, timestamp, ltp, volume) VALUES"
         values = (
-            data["ts"],
+            data["e"] + "|" + data["ts"],
             data["ft"].strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],
             float(data["lp"]),
             float(data["volume"]),
