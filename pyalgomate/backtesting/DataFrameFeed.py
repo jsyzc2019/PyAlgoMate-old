@@ -160,6 +160,12 @@ class DataFrameFeed(BaseBarFeed):
 
         return lastBar
 
+    def getMicroPrice(self, instrument):
+        lastBar = self.getLastBar(instrument)
+        if lastBar is None:
+            return None
+        return lastBar.getClose()
+
     def getLastUpdatedDateTime(self):
         return self.__currentDateTime
 
