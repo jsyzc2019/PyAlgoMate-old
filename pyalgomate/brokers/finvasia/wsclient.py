@@ -163,29 +163,44 @@ class WebSocketClient:
         logger.warning("Unknown event: %s." % event)
 
     def onQuoteUpdate(self, message):
-        key = message["e"] + "|" + message["tk"]
-        self.__lastReceivedDateTime = datetime.datetime.now()
-        message["ct"] = self.__lastReceivedDateTime
+        try:
+            key = message["e"] + "|" + message["tk"]
+            self.__lastReceivedDateTime = datetime.datetime.now()
+            message["ct"] = self.__lastReceivedDateTime
 
-        previousVolume = self.__quotes[key]["v"] if key in self.__quotes else 0
-        if key in self.__quotes:
-            symbolInfo = self.__quotes[key]
-            symbolInfo.update(message)
-            self.__quotes[key] = symbolInfo
-        else:
-            self.__quotes[key] = message
-
-        self.__lastQuoteDateTime = (
-            self.__quotes[key]["ft"]
-            if "ft" in self.__quotes[key]
-            else self.__lastReceivedDateTime.replace(microsecond=0)
-        )
-        if "v" in message:
-            self.__quotes[key]["volume"] = message["v"] - previousVolume
-            self.__socket.send_multipart(
-                [b"FEED_UPDATE", pickle.dumps(self.__quotes[key])]
+            previousVolume = (
+                self.__quotes[key]["v"]
+                if key in self.__quotes and "v" in self.__quotes[key]
+                else 0
             )
-            storeDataInClickhouse(self.__quotes[key])
+            self.__lastQuoteDateTime = (
+                datetime.datetime.fromtimestamp(int(message["ft"]))
+                if "ft" in message
+                else self.__lastReceivedDateTime.replace(microsecond=0)
+            )
+            message["ft"] = self.__lastQuoteDateTime
+            if key in self.__quotes:
+                symbolInfo = self.__quotes[key]
+                symbolInfo.update(message)
+                self.__quotes[key] = symbolInfo
+            else:
+                self.__quotes[key] = message
+
+            if "v" in message:
+                self.__quotes[key]["volume"] = float(message["v"]) - float(
+                    previousVolume
+                )
+                self.__socket.send_multipart(
+                    [b"FEED_UPDATE", pickle.dumps(self.__quotes[key])]
+                )
+                storeDataInClickhouse(self.__quotes[key])
+            else:
+                self.__quotes[key]["volume"] = 0
+                self.__socket.send_multipart(
+                    [b"FEED_UPDATE", pickle.dumps(self.__quotes[key])]
+                )
+        except Exception as e:
+            logger.error(e)
 
     def onOrderUpdate(self, message):
         logger.info(f"Order update: {message}")
