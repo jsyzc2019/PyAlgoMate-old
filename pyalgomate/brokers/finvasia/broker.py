@@ -291,9 +291,10 @@ class TradeMonitor(threading.Thread):
         self.__retryData = dict()
         self.__pendingUpdates = set()
         self.__openOrders = set()
-        self.__semaphore = asyncio.Semaphore(max_concurrent_tasks)
-        self.__zmq_context = zmq.asyncio.Context()
-        self.__zmq_socket = self.__zmq_context.socket(zmq.SUB)
+        self.__semaphore = None
+        self.__zmq_context = None
+        self.__zmq_socket = None
+        self.__max_concurrent_tasks = max_concurrent_tasks
 
         if ipc_path is None:
             # Create a platform-independent IPC path
@@ -302,6 +303,14 @@ class TradeMonitor(threading.Thread):
             self.__ipc_path = os.path.join(ipc_dir, ipc_file)
         else:
             self.__ipc_path = ipc_path
+
+        self.__order_queue = None
+
+    async def setup(self):
+        """Initialize all async resources"""
+        self.__semaphore = asyncio.Semaphore(self.__max_concurrent_tasks)
+        self.__zmq_context = zmq.asyncio.Context()
+        self.__zmq_socket = self.__zmq_context.socket(zmq.SUB)
 
         # On Windows, we need to use tcp instead of ipc
         if os.name == "nt":
@@ -317,8 +326,12 @@ class TradeMonitor(threading.Thread):
         self.__order_queue = asyncio.Queue()
 
     async def run_async(self):
-        asyncio.create_task(self.process_zmq_updates())
-        asyncio.create_task(self.process_order_queue())
+        await self.setup()
+        await asyncio.gather(
+            self.process_zmq_updates(), self.process_order_queue(), self.run_main_loop()
+        )
+
+    async def run_main_loop(self):
         while not self.__stop:
             try:
                 await self.process_pending_updates()
@@ -326,6 +339,18 @@ class TradeMonitor(threading.Thread):
             except Exception as e:
                 logger.exception("Error in TradeMonitor run loop", exc_info=e)
             await asyncio.sleep(self.POLL_FREQUENCY)
+
+    def run(self):
+        """Thread entry point"""
+        asyncio.run_coroutine_threadsafe(self.run_async(), self.__broker.loop)
+
+    def stop(self):
+        """Stop the monitor and cleanup resources"""
+        self.__stop = True
+        if self.__zmq_socket:
+            self.__zmq_socket.close()
+        if self.__zmq_context:
+            self.__zmq_context.term()
 
     async def process_zmq_updates(self):
         while not self.__stop:
@@ -455,17 +480,6 @@ class TradeMonitor(threading.Thread):
             self.__retryData[order]["lastRetryTime"] = time.time()
         except Exception as e:
             logger.exception(f"Error retrying open order {order.getId()}", exc_info=e)
-
-    def start(self):
-        super(TradeMonitor, self).start()
-
-    def run(self):
-        asyncio.run_coroutine_threadsafe(self.run_async(), self.__broker.loop)
-
-    def stop(self):
-        self.__stop = True
-        self.__zmq_socket.close()
-        self.__zmq_context.term()
 
 
 class OrderResponse(object):
