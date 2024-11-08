@@ -186,9 +186,6 @@ class LiveTradeFeed(BaseBarFeed):
 
         self.__socket.setsockopt_string(zmq.SUBSCRIBE, "FEED_UPDATE")
 
-        # Queue to communicate between threads
-        self.__queue = Queue()
-
         self.__latestQuotes = {}
         self.__latestOIs = {}
 
@@ -248,7 +245,6 @@ class LiveTradeFeed(BaseBarFeed):
                 if message.get("oi", None) is not None:
                     self.__latestOIs[key] = float(message["oi"])
 
-                self.__queue.put_nowait(message)
                 self.__lastQuoteDateTime = message["ft"]
                 self.__lastReceivedDateTime = datetime.datetime.now()
             except zmq.Again:
