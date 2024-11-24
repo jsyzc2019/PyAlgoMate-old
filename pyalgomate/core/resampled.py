@@ -89,6 +89,7 @@ class ResampledBars():
         self.__values = []
         self.__grouper = None
         self.__range = None
+        self.__lastBars: bar.Bars = None
 
     def getFrequency(self):
         return self.__frequency
@@ -98,6 +99,17 @@ class ResampledBars():
             return self.__grouper.getGrouped().getBar(instrument)
 
         return None
+
+    def getLastBars(self) -> bar.Bars:
+        return self.__lastBars
+
+    def addLastBars(self, bars: bar.Bars):
+        if self.__lastBars and self.__lastBars.getDateTime() == bars.getDateTime():
+            self.__lastBars = bar.Bars(
+                {**self.__lastBars._Bars__barDict, **bars._Bars__barDict}
+            )
+        else:
+            self.__lastBars = bars
 
     def addBars(self, dateTime, value):
         if self.__range is None:
@@ -119,7 +131,7 @@ class ResampledBars():
             self.__range = None
 
         if len(self.__values):
-            self.__callback(self.__values.pop(0))
+            self.sendBars()
 
     def checkNow(self, dateTime):
         if (self.__grouper is not None) and (self.__range is not None) and (not self.__range.belongs(dateTime)):
@@ -128,7 +140,12 @@ class ResampledBars():
             self.__range = None
 
         if len(self.__values):
-            self.__callback(self.__values.pop(0))
+            self.sendBars()
+
+    def sendBars(self):
+        self.__lastBars = self.__values.pop(0)
+        self.__callback(self.__lastBars)
+
 
 if __name__ == "__main__":
     dateTime = datetime.datetime.now()
